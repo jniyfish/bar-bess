@@ -1,4 +1,3 @@
-// Copyright (c) 2014-2016, The Regents of the University of California.
 // Copyright (c) 2016-2017, Nefeli Networks, Inc.
 // All rights reserved.
 //
@@ -28,37 +27,54 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef BESS_MODULES_BUFFER_H_
-#define BESS_MODULES_BUFFER_H_
-#include "../module.h"
-#include <wait.h>
-#include "../pb/module_msg.pb.h"
+syntax = "proto3";
 
-/* TODO: timer-triggered flush */
-class Buffer final : public Module {
- public:
-  Buffer() : Module(), buf_() {}
-  void DeInit() override;
+package bess.pb;
 
-  void ProcessBatch(Context *ctx, bess::PacketBatch *batch) override;
-  struct task_result RunTask(Context *ctx, bess::PacketBatch *batch,
-                             void *arg) override;
+message PCAPPortArg {
+  string dev = 1;
+}
 
-  static const Commands cmds;
-  CommandResponse CommandAddPDUSession(const bess::pb::PDUSessionArg &arg);
-  CommandResponse CommandRelease(const bess::pb::BufferCommandReleaseArg &arg);
-  CommandResponse Init(const bess::pb::EmptyArg &arg);
+message PMDPortArg {
+  bool loopback = 1;
+  oneof port {
+    uint64 port_id = 2;
+    string pci = 3;
+    string vdev = 4;
+  }
 
- private:
-  bess::PacketBatch buf_; //private buffer batch
-  int release_flag = 0; //0: buffer incoming packet 1: release buffered packet
-  struct list{
-    bess::PacketBatch buf_;
-    uint farID;
-    struct list *next;
-    int releaseFlag; // 0: buffer, 1: Release
-    //list of UE
-  };
-  struct list *head = NULL;
-};
-#endif  // BESS_MODULES_BUFFER_H_
+  // See http://dpdk.org/doc/dts/test_plans/dual_vlan_test_plan.html
+  bool vlan_offload_rx_strip = 5;
+  bool vlan_offload_rx_filter = 6;
+  bool vlan_offload_rx_qinq = 7;
+}
+
+message UnixSocketPortArg {
+  /// Set the first character to "@" in place of \0 for abstract path
+  /// See manpage for unix(7).
+  string path = 1;
+
+  /// Minimum RX polling interval for system calls, when *idle*.
+  /// Use a negative number for unthrottled polling. If unspecified or 0,
+  /// it is set to 50,000 (50 microseconds, or 20k polls per second)
+  int64 min_rx_interval_ns = 2;
+
+  /// If set, the port driver will send a confirmation once
+  /// the port is connected.  This lets pybess avoid a race during
+  /// testing.  See bessctl/test_utils.py for details.
+  bool confirm_connect = 3;
+}
+
+message VPortArg {
+  string ifname = 1;
+  oneof cpid {
+    string docker = 2;
+    int64 container_pid = 3;
+    string netns = 4;
+  }
+  repeated int64 rxq_cpus = 5;
+  uint64 tx_tci = 6;
+  uint64 tx_outer_tci = 7;
+  bool loopback = 8;
+  repeated string ip_addrs = 9;
+}

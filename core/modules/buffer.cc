@@ -29,6 +29,16 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #include "buffer.h"
+#include "../utils/format.h"
+#include <cstdlib>
+
+
+const Commands Buffer::cmds = {
+    {"release", "EmptyArg", MODULE_CMD_FUNC(&Buffer::CommandRelease),
+     Command::THREAD_SAFE},
+    {"add", "PDUSessionArg", MODULE_CMD_FUNC(&Buffer::CommandAddPDUSession),
+     Command::THREAD_SAFE}
+    };
 
 void Buffer::DeInit() {
   bess::PacketBatch *buf = &buf_;
@@ -36,31 +46,108 @@ void Buffer::DeInit() {
 }
 
 void Buffer::ProcessBatch(Context *ctx, bess::PacketBatch *batch) {
-  bess::PacketBatch *buf = &buf_;
+  bess::PacketBatch *buf = NULL;
+  struct list *ptr = this->head;
+  uint left = batch->cnt();
+  for (uint i = 0; i < left; i++) {
+    bess::Packet *pkt = batch->pkts()[i];
+    uint farId = get_attr<uint32_t>(this, 0, pkt);
+    while(ptr!=NULL){
+      if(farId == ptr->farID){
+          buf = &ptr->buf_;
+          bess::Packet **p_buf = &buf->pkts()[buf->cnt()];
+          bess::Packet **p_batch = &batch->pkts()[i];
+          buf->incr_cnt(1);
+          bess::utils::CopyInlined(p_buf, p_batch, 1 * sizeof(bess::Packet *));
+      }
+      ptr = ptr->next;
+    }
+  }
+  
 
-  int free_slots = bess::PacketBatch::kMaxBurst - buf->cnt();
-  int left = batch->cnt();
 
-  bess::Packet **p_buf = &buf->pkts()[buf->cnt()];
-  bess::Packet **p_batch = &batch->pkts()[0];
+  if(1>2)
+    RunNextModule(ctx, batch);
+}
+struct task_result Buffer::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
+  bess::PacketBatch *buf = NULL;
+  struct list *ptr = this->head;
+  while(ptr!=NULL){
+    if (ptr->releaseFlag == 1) {
+      ptr->releaseFlag = 0;
+      buf = &ptr->buf_;
+      buf->set_cnt( buf->cnt() + batch->cnt());
+      bess::PacketBatch *new_batch = ctx->task->AllocPacketBatch();
+      new_batch->Copy(buf);
+      buf->clear();
+      RunNextModule(ctx, new_batch);
+    }
+    ptr = ptr->next;
+  }
+      return {
+        .block = true,
+        .packets = 0,
+        .bits = 0,
+    };
+}
+//buffer incoming packet batch to private buffer batch
+CommandResponse Buffer::CommandRelease(const bess::pb::BufferCommandReleaseArg &arg) {
+  struct list *ptr = head;
+  while(ptr!=NULL){
+    if(ptr->farID  == arg.farid()){
+      ptr->releaseFlag = 1;
+    }
+    ptr=ptr->next;
+  }
+  return CommandSuccess();
+}
 
-  if (left >= free_slots) {
-    buf->set_cnt(bess::PacketBatch::kMaxBurst);
-    bess::utils::CopyInlined(p_buf, p_batch,
-                             free_slots * sizeof(bess::Packet *));
-
-    p_buf = &buf->pkts()[0];
-    p_batch += free_slots;
-    left -= free_slots;
-
-    bess::PacketBatch *new_batch = ctx->task->AllocPacketBatch();
-    new_batch->Copy(buf);
-    buf->clear();
-    RunNextModule(ctx, new_batch);
+CommandResponse Buffer::CommandAddPDUSession(const bess::pb::PDUSessionArg &arg) {
+  if(head == NULL) {
+      head = (struct list*)malloc(sizeof(struct list));
+      head->buf_ = buf_;
+      head->farID = arg.farid();
+      head->releaseFlag = 0;
+      head->next = NULL;
+      return CommandSuccess();
+  }
+  struct list *ptr = head;
+  while(ptr!=NULL){
+    if (ptr->farID == arg.farid()) {
+      return CommandSuccess();
+    }
+    else if (ptr->farID != arg.farid()){
+      if(ptr->next !=NULL){
+        ptr = ptr->next;
+      }
+      else if (ptr->next == NULL){
+          ptr->next = (struct list*)malloc(sizeof(struct list));
+          ptr->next->buf_ = buf_;
+          ptr->next->farID = arg.farid();
+          ptr->next->releaseFlag = 0;
+          ptr->next->next = NULL;
+      }
+    }
   }
 
-  buf->incr_cnt(left);
-  bess::utils::CopyInlined(p_buf, p_batch, left * sizeof(bess::Packet *));
+  return CommandSuccess();
+}
+
+CommandResponse Buffer::Init(const bess::pb::EmptyArg &) {
+  using AccessMode = bess::metadata::Attribute::AccessMode;
+
+  AddMetadataAttr("farid", 4, AccessMode::kRead);
+  //AddMetadataAttr("ip_dst", 4, AccessMode::kRead);
+
+  task_id_t tid;
+  CommandResponse err;
+
+  tid = RegisterTask(nullptr);
+  if (tid == INVALID_TASK_ID) {
+    return CommandFailure(ENOMEM, "Task creation failed");
+  }
+
+  return CommandSuccess();
 }
 
 ADD_MODULE(Buffer, "buffer", "buffers packets into larger batches")

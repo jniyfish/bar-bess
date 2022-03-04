@@ -31,10 +31,21 @@
 syntax = "proto3";
 
 package bess.pb;
-option java_package = "org.onosproject.pfcp.protocol.api.grpcClient.pb";
 import "util_msg.proto";
 
+// Module-specific messages.
+// The header generated from this file should not be included in the BESS core
+// source code.
 
+// For your comments to come out in the auto-documentation:
+// Format comments with two stars at the top, or use three slashes (///)
+// Anything you write will show up as markdown, so feel free to add italics, etc.
+
+/// The module_msg.proto file is stored in `bess/protobuf/` and it supplies the glue between
+/// bessd modules and the outside world via GRPC.
+/// bessctl uses GRPC to update modules. Whenever you call a function in bessctl, a corresponding function
+/// is called on modules in bessd. This file lists all modules, their initialization parameters
+/// and any functions that may be called on them.
 
 message EmptyArg {
 }
@@ -447,7 +458,6 @@ message BufferArg {
 }
 
 message BufferCommandReleaseArg{
-  uint32 farid = 1;
 }
 
 /**

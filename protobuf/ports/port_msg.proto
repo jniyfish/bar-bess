@@ -30,7 +30,7 @@
 syntax = "proto3";
 
 package bess.pb;
-
+option java_package = "org.onosproject.pfcp.protocol.api.grpcClient.pb";
 message PCAPPortArg {
   string dev = 1;
 }

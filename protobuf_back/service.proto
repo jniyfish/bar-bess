@@ -32,7 +32,6 @@ syntax = "proto3";
 import "bess_msg.proto";
 
 package bess.pb;
-option java_package = "org.onosproject.pfcp.protocol.api.grpcClient.pb";
 
 service BESSControl {
 

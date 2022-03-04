@@ -386,6 +386,7 @@ def generate_protobuf_files():
     sys.stdout.flush()
     gen_one_set_of_files('protobuf', 'pybess/builtin_pb')
     gen_one_set_of_files('protobuf/tests', 'pybess/builtin_pb')
+    
     for path in plugins:
         gen_one_set_of_files(os.path.join(path, 'protobuf'),
                              'pybess/plugin_pb')

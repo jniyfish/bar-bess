@@ -1,0 +1,38 @@
+container_if = VPort(ifname='eth_vport_test', docker='vport_test', ip_addrs=['198.18.0.1/24'])
+
+host_if = VPort(ifname='eth_host', ip_addrs=['60.0.0.1/24'])
+
+farGate1 = 0 
+farGate2 = 1 
+farLookup::WildcardMatch(fields=[{'offset':16, 'num_bytes':4}], \
+        values=[{'attr_name':'action', 'num_bytes':1}, \
+        {'attr_name':'farid', 'num_bytes':4}] \
+        ):farGate1 \
+        -> buffer::Buffer() \
+        ->  SetMetadata(attrs=[{'name': 'ether_src', 'size': 6, 'value_int': 0x112233445566}]) \
+        ->  SetMetadata(attrs=[{'name': 'ether_dst', 'size': 6, 'value_int': 0x112233445566}]) \
+        ->  SetMetadata(attrs=[{'name': 'ether_type', 'size': 2, 'value_int': 0x0800}]) \
+        -> EtherEncap() \
+        -> PortOut(port=container_if)
+
+PortInc(port=host_if) \
+-> gtpuDecap::GtpuDecap() \
+-> farLookup 
+
+farLookup:farGate2 -> Sink()
+
+farLookup.set_default_gate(gate=1)
+
+PortInc(port=container_if) -> PortOut(port=host_if)
+
+bess.add_tc('slow', policy='rate_limit', resource='packet', limit={'packet': 1000000})
+buffer.attach_task('slow')
+
+farLookup.add(values=[{'value_bin': '\x3c\x3c\x00\x02'}], gate=0,
+        masks=[{'value_bin': '\xff\xff\xff\xff'}], priority=3,
+        valuesv=[{'value_int': 1}, {'value_int': 1}])
+
+farLookup.add(values=[{'value_bin': '\x3c\x3c\x00\x01'}], gate=0,
+        masks=[{'value_bin': '\xff\xff\xff\xff'}], priority=3,
+        valuesv=[{'value_int': 1}, {'value_int': 2}])
+

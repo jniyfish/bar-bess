@@ -1,0 +1,20 @@
+
+
+
+container_if = VPort(ifname='eth_vport_test', docker='vport_test', ip_addrs=['10.255.99.2/24'])
+host_if = VPort(ifname='eth_host', ip_addrs=['10.255.99.1/24'])
+
+
+
+PortInc(port=host_if) \
+-> gtpuDecap::GtpuDecap()  \
+->  SetMetadata(attrs=[{'name': 'ether_src', 'size': 6, 'value_int': 0x112233445566}]) \
+->  SetMetadata(attrs=[{'name': 'ether_dst', 'size': 6, 'value_int': 0x112233445566}]) \
+->  SetMetadata(attrs=[{'name': 'ether_type', 'size': 2, 'value_int': 0x0800}]) \
+-> EtherEncap() \
+-> PortOut(port=container_if)
+#PortInc(port=host_if) -> PortOut(port=container_if)
+PortInc(port=container_if) -> PortOut(port=host_if)
+
+
+
