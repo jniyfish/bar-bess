@@ -35,7 +35,7 @@
 
 const Commands Buffer::cmds = {
     {"release", "EmptyArg", MODULE_CMD_FUNC(&Buffer::CommandRelease),
-     Command::THREAD_SAFE},
+     Command::THREAD_UNSAFE},
     {"add", "PDUSessionArg", MODULE_CMD_FUNC(&Buffer::CommandAddPDUSession),
      Command::THREAD_SAFE}
     };

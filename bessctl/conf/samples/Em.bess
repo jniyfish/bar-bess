@@ -28,11 +28,11 @@ PortInc(port=container_if) -> PortOut(port=host_if)
 bess.add_tc('slow', policy='rate_limit', resource='packet', limit={'packet': 1000000})
 buffer.attach_task('slow')
 
-farLookup.add(values=[{'value_bin': '\x3c\x3c\x00\x02'}], gate=0,
-        masks=[{'value_bin': '\xff\xff\xff\xff'}], priority=3,
-        valuesv=[{'value_int': 1}, {'value_int': 1}])
+#farLookup.add(values=[{'value_bin': '\x3c\x3c\x00\x02'}], gate=0,
+#        masks=[{'value_bin': '\xff\xff\xff\xff'}], priority=3,
+#        valuesv=[{'value_int': 1}, {'value_int': 1}])
 
-farLookup.add(values=[{'value_bin': '\x3c\x3c\x00\x01'}], gate=0,
-        masks=[{'value_bin': '\xff\xff\xff\xff'}], priority=3,
-        valuesv=[{'value_int': 1}, {'value_int': 2}])
+#farLookup.add(values=[{'value_bin': '\x3c\x3c\x00\x01'}], gate=0,
+#        masks=[{'value_bin': '\xff\xff\xff\xff'}], priority=3,
+#        valuesv=[{'value_int': 1}, {'value_int': 2}])
 
