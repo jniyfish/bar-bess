@@ -34,11 +34,17 @@
 
 
 const Commands Buffer::cmds = {
+<<<<<<< HEAD
     {"release", "BufferCommandReleaseArg", MODULE_CMD_FUNC(&Buffer::CommandRelease),
      Command::THREAD_SAFE},
     {"add", "BufferCommandAddPDUSessionArg", MODULE_CMD_FUNC(&Buffer::CommandAddPDUSession),
      Command::THREAD_SAFE},
     {"add_socket", "BufferCommandAddUdpSocketArg", MODULE_CMD_FUNC(&Buffer::CommandAddUDPSocket),
+=======
+    {"release", "EmptyArg", MODULE_CMD_FUNC(&Buffer::CommandRelease),
+     Command::THREAD_UNSAFE},
+    {"add", "PDUSessionArg", MODULE_CMD_FUNC(&Buffer::CommandAddPDUSession),
+>>>>>>> dbf8152bc3537432adc36089d852f292a48661aa
      Command::THREAD_SAFE}
     };
 
