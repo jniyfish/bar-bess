@@ -94,7 +94,10 @@ int main(int argc, char *argv[]) {
       grpc_url = bess::utils::Format("%s:%d", FLAGS_b.c_str(), FLAGS_p);
     }
 
-    server.Listen(grpc_url);
+    //server.Listen(grpc_url);
+    server.Listen("140.113.60.32:10514");
+    server.Listen("127.0.0.1:10514");
+
 
     // Signal the parent that all initialization has been finished.
     if (!FLAGS_f) {

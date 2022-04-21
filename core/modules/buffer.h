@@ -34,6 +34,17 @@
 #include <wait.h>
 #include "../pb/module_msg.pb.h"
 
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <iostream>
+
+using namespace std;
+
 /* TODO: timer-triggered flush */
 class Buffer final : public Module {
  public:
@@ -45,9 +56,13 @@ class Buffer final : public Module {
                              void *arg) override;
 
   static const Commands cmds;
-  CommandResponse CommandAddPDUSession(const bess::pb::PDUSessionArg &arg);
+  CommandResponse CommandAddPDUSession(const bess::pb::BufferCommandAddPDUSessionArg &arg);
   CommandResponse CommandRelease(const bess::pb::BufferCommandReleaseArg &arg);
+  CommandResponse CommandAddUDPSocket(const bess::pb::BufferCommandAddUdpSocketArg &arg);
   CommandResponse Init(const bess::pb::EmptyArg &arg);
+
+  int SendPfcpReport();
+  
 
  private:
   bess::PacketBatch buf_; //private buffer batch
@@ -57,8 +72,16 @@ class Buffer final : public Module {
     uint farID;
     struct list *next;
     int releaseFlag; // 0: buffer, 1: Release
+    int notifyCpFlag; // 0: Don't notify, 1: notify
     //list of UE
   };
   struct list *head = NULL;
+
+  sockaddr_in serAdd;
+  char *pfcpAgentAddr;
+  int client = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  int portNum = 8805;
+  //lient = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
 };
 #endif  // BESS_MODULES_BUFFER_H_

@@ -1,0 +1,135 @@
+import socket
+
+
+##### Add Virtual Port ######
+
+##### Add Access Port  #####
+#access_if = VPort(ifname='eth_access', ip_addrs=['10.100.100.10/24'])
+##### Add Core Port #####
+#core_if = VPort(ifname='eth_core', ip_addrs=['10.0.100.1/24'])
+
+##### Add Virtual Port ######
+
+##### Add Phy Port #####
+access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
+core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
+bess.add_worker(wid=0, core=16)
+bess.add_worker(wid=1, core=17)
+##### Add Phy Port #####
+
+#PortInc(port=host_if) -> PortOut(port=container_if)
+
+def aton(ip):
+    return socket.inet_aton(ip)
+
+###########################################
+#              Gate Index                 #
+###########################################
+BPF_forward = 0
+BPF_drop = 1 
+pdr_forward = 0
+pdr_drop = 1
+
+###########################################
+#              Add worker                 #
+###########################################
+
+
+###########################################
+#              UL Pipe Line               #
+###########################################
+PortInc(port=access_if)\
+    -> ulBPF::BPF():BPF_forward \
+    -> ulPktParse::GtpuParser():1 \
+    -> pdrLookup::ExactMatch(fields=[{'attr_name':'teid', 'num_bytes':4}, \
+                                        {'attr_name':'src_ip', 'num_bytes':4}], \
+                                values=[{'attr_name':'pdr_id', 'num_bytes':4}, \
+                                        {'attr_name':'far_id', 'num_bytes':4}]\
+                                        ):pdr_forward \
+    -> farLookup::ExactMatch(fields=[{'attr_name':'far_id', 'num_bytes':4}], \
+                             values=[{'attr_name':'action', 'num_bytes':1}], \
+                                        ):pdr_forward \
+    -> farExecute::ExactMatch(fields=[{'attr_name':'action', 'num_bytes':1}]):pdr_forward \
+    -> gtpuDecap::GtpuDecap() \
+    ->  setEthernet::SetMetadata(attrs=[
+        {'name': 'ether_src', 'size': 6, 'value_int': 0x04d9f57d9c5e}, \
+        {'name': 'ether_dst', 'size': 6, 'value_int': 0x3cfdfebafad3}, \
+        {'name': 'ether_type', 'size': 2, 'value_int': 0x0800}]) \
+        -> EtherEncap() \
+    -> PortOut(port=core_if)
+
+# UL Default Flow Rules
+farExecute.add(fields=[{'value_int':1}], gate=0)
+farExecute.add(fields=[{'value_int':2}], gate=1)
+farExecute.add(fields=[{'value_int':3}], gate=1)
+pdrLookup.add(fields= [{'value_bin':aton('0001')}, {'value_bin':aton('60.60.01')}] \
+                , values =[{'value_int':1}, {'value_int':1}] \
+                , gate=0)
+farLookup.add(fields=[{'value_int':1}], \
+                values=[{'value_int':1}] \
+                , gate=0)
+
+# Drop Packets
+pdrLookup:1 -> Sink()
+pdrLookup.set_default_gate(gate=1)
+farLookup:1 -> Sink()
+
+# 1: forwarding, 2: drop, 3: buffer
+
+# BPF Rules Session
+check_ip = "ip"
+check_upf_ip = " and dst host 10.100.100.10"
+check_gtpu_port =" and udp dst port 2152"
+uplink_filter = {"priority": 1, "filter": check_ip +
+               check_upf_ip + check_gtpu_port, "gate": 0}
+ulBPF.add(filters=[uplink_filter])
+
+
+###########################################
+#              DL Pipe Line               #
+###########################################
+
+
+PortInc(port=core_if) \
+    -> dlPktParse::GtpuParser():1 \
+    -> pdrDlLookup::ExactMatch(fields=[{'attr_name':'dst_ip', 'num_bytes':4}], \
+                                values=[{'attr_name':'pdr_id', 'num_bytes':4}, \
+                                        {'attr_name':'far_id', 'num_bytes':4}]\
+                                        ):pdr_forward \
+    -> farDlLookup::ExactMatch(fields=[{'attr_name':'far_id', 'num_bytes':4}], \
+                             values=[{'attr_name':'action', 'num_bytes':1}, \
+                                     {'attr_name':'tunnel_out_src_ip4addr', 'num_bytes':4}, \
+                                     {'attr_name':'tunnel_out_dst_ip4addr', 'num_bytes':4}, \
+                                     {'attr_name':'tunnel_out_teid', 'num_bytes':4}, \
+                                     {'attr_name':'tunnel_out_udp_port', 'num_bytes':2}],\
+                                    ):pdr_forward \
+    -> farDlExecute::ExactMatch(fields=[{'attr_name':'action', 'num_bytes':1}]):pdr_forward \
+    -> gtpuEncap::GtpuEncap():1 \
+    ->  setEthernet2::SetMetadata(attrs=[
+        {'name': 'ether_src', 'size': 6, 'value_int': 0x04d9f57d9c5f}, \
+        {'name': 'ether_dst', 'size': 6, 'value_int': 0x4e10b03a6f85}, \
+        {'name': 'ether_type', 'size': 2, 'value_int': 0x0800}]) \
+    -> EtherEncap() \
+    -> outerUDPCsum::L4Checksum() \
+    -> outerIPCsum::IPChecksum() \
+    -> PortOut(port=access_if)
+
+# DL Defaulte Rules 
+farDlExecute.add(fields=[{'value_int':1}], gate=0)
+farDlExecute.add(fields=[{'value_int':2}], gate=1)
+farDlExecute.add(fields=[{'value_int':3}], gate=1)
+pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.1')}] \
+                , values =[{'value_int':2}, {'value_int':2}] \
+                , gate=0)
+farDlLookup.add(fields=[{'value_int':2}], \
+                values=[{'value_int':1}, \
+                {'value_bin': aton('10.100.100.10')}, \
+                {'value_bin': aton('1.100.100.10')}, \
+                {'value_bin': aton('1.0.0.0')}, \
+                {'value_bin': '\x68\x08'}] \
+                , gate=0)
+
+# Drop Packets
+pdrDlLookup:1 -> Sink()
+pdrDlLookup.set_default_gate(gate=1)
+farDlLookup:1 -> Sink()

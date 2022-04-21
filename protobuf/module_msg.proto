@@ -446,7 +446,15 @@ message BPFArg {
 message BufferArg {
 }
 
-message BufferCommandReleaseArg{
+message BufferCommandReleaseArg {
+  uint32 farid = 1;
+}
+
+message BufferCommandAddUdpSocketArg {
+  string pfcpAgentAddr = 1;
+}
+
+message BufferCommandAddPDUSessionArg {
   uint32 farid = 1;
 }
 
