@@ -1,7 +1,7 @@
 import psutil
 bess.add_worker(wid=0, core=16)
 
-host_if::PMDPort(pci='0000:83:00.0', num_inc_q=1, num_out_q=1)
+host_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
 
 
 
@@ -33,10 +33,7 @@ farLookup.set_default_gate(gate=1)
 pi.attach_task(wid=0)
 buffer.attach_task(wid=0)
 
-<<<<<<< HEAD
-
-=======
-PortInc(port=container_if) -> PortOut(port=host_if)
+#PortInc(port=container_if) -> PortOut(port=host_if)
 
 bess.add_tc('slow', policy='rate_limit', resource='packet', limit={'packet': 1000000})
 buffer.attach_task('slow')
@@ -48,5 +45,4 @@ buffer.attach_task('slow')
 #farLookup.add(values=[{'value_bin': '\x3c\x3c\x00\x01'}], gate=0,
 #        masks=[{'value_bin': '\xff\xff\xff\xff'}], priority=3,
 #        valuesv=[{'value_int': 1}, {'value_int': 2}])
->>>>>>> dbf8152bc3537432adc36089d852f292a48661aa
 

@@ -2,12 +2,10 @@ import socket
 
 
 ##### Add Virtual Port ######
-
-##### Add Access Port  #####
+#Add Access Port
 #access_if = VPort(ifname='eth_access', ip_addrs=['10.100.100.10/24'])
-##### Add Core Port #####
+#Add Core Port
 #core_if = VPort(ifname='eth_core', ip_addrs=['10.0.100.1/24'])
-
 ##### Add Virtual Port ######
 
 ##### Add Phy Port #####
@@ -28,7 +26,8 @@ def aton(ip):
 BPF_forward = 0
 BPF_drop = 1 
 pdr_forward = 0
-pdr_drop = 1
+pdr_buffer = 1
+pdr_drop = 2
 
 ###########################################
 #              Add worker                 #
@@ -58,16 +57,6 @@ PortInc(port=access_if)\
         -> EtherEncap() \
     -> PortOut(port=core_if)
 
-# UL Default Flow Rules
-farExecute.add(fields=[{'value_int':1}], gate=0)
-farExecute.add(fields=[{'value_int':2}], gate=1)
-farExecute.add(fields=[{'value_int':3}], gate=1)
-pdrLookup.add(fields= [{'value_bin':aton('0001')}, {'value_bin':aton('60.60.01')}] \
-                , values =[{'value_int':1}, {'value_int':1}] \
-                , gate=0)
-farLookup.add(fields=[{'value_int':1}], \
-                values=[{'value_int':1}] \
-                , gate=0)
 
 # Drop Packets
 pdrLookup:1 -> Sink()
@@ -104,6 +93,7 @@ PortInc(port=core_if) \
                                      {'attr_name':'tunnel_out_udp_port', 'num_bytes':2}],\
                                     ):pdr_forward \
     -> farDlExecute::ExactMatch(fields=[{'attr_name':'action', 'num_bytes':1}]):pdr_forward \
+    -> dlFarMerge::Merge() \
     -> gtpuEncap::GtpuEncap():1 \
     ->  setEthernet2::SetMetadata(attrs=[
         {'name': 'ether_src', 'size': 6, 'value_int': 0x04d9f57d9c5f}, \
@@ -114,20 +104,38 @@ PortInc(port=core_if) \
     -> outerIPCsum::IPChecksum() \
     -> PortOut(port=access_if)
 
-# DL Defaulte Rules 
+farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
+farDlExecute:2 -> Sink()
+buffer.attach_task(wid=1)
+#Defaulte farExecute Action Rules
+# 1: forward
+# 2: buffer
+# 3: drop 
 farDlExecute.add(fields=[{'value_int':1}], gate=0)
 farDlExecute.add(fields=[{'value_int':2}], gate=1)
 farDlExecute.add(fields=[{'value_int':3}], gate=1)
-pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.1')}] \
-                , values =[{'value_int':2}, {'value_int':2}] \
-                , gate=0)
-farDlLookup.add(fields=[{'value_int':2}], \
-                values=[{'value_int':1}, \
-                {'value_bin': aton('10.100.100.10')}, \
-                {'value_bin': aton('1.100.100.10')}, \
-                {'value_bin': aton('1.0.0.0')}, \
-                {'value_bin': '\x68\x08'}] \
-                , gate=0)
+farExecute.add(fields=[{'value_int':1}], gate=0)
+farExecute.add(fields=[{'value_int':2}], gate=1)
+farExecute.add(fields=[{'value_int':3}], gate=1)
+
+#Defaulte Flow Rules For testing 
+#pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.1')}] \
+#                , values =[{'value_int':2}, {'value_int':2}] \
+#                , gate=0)
+#farDlLookup.add(fields=[{'value_bin':"\000\000\000\002"}], \
+#                values=[{'value_int':1}, \
+#                {'value_bin': aton('10.100.100.10')}, \
+#                {'value_bin': aton('1.100.100.10')}, \
+#                {'value_bin': aton('1.0.0.0')}, \
+#                {'value_bin': '\x68\x08'}] \
+#                , gate=0)
+#pdrLookup.add(fields= [{'value_bin':aton('0.0.0.1')}, {'value_bin':aton('60.60.0.1')}] \
+#                , values =[{'value_int':1}, {'value_int':1}] \
+#                , gate=0)
+#farLookup.add(fields=[{'value_int':1}], \
+#                values=[{'value_int':1}] \
+#                , gate=0)
+
 
 # Drop Packets
 pdrDlLookup:1 -> Sink()
