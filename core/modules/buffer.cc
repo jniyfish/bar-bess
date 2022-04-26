@@ -37,7 +37,7 @@ const Commands Buffer::cmds = {
     {"release", "BufferCommandReleaseArg", MODULE_CMD_FUNC(&Buffer::CommandRelease),
      Command::THREAD_SAFE},
     {"add", "BufferCommandAddPDUSessionArg", MODULE_CMD_FUNC(&Buffer::CommandAddPDUSession),
-     Command::THREAD_SAFE},
+     Command::THREAD_UNSAFE},
     {"add_socket", "BufferCommandAddUdpSocketArg", MODULE_CMD_FUNC(&Buffer::CommandAddUDPSocket),
      Command::THREAD_SAFE}
     };
@@ -56,12 +56,6 @@ void Buffer::ProcessBatch(Context *, bess::PacketBatch *batch) {
     uint farId = get_attr<uint32_t>(this, 0, pkt);
     while(ptr!=NULL){
       if(farId == ptr->farID){
-         if(ptr->notifyCpFlag == 1) {
-            SendPfcpReport();
-            ptr->notifyCpFlag = 0;
-            //downlink notification
-            // 1:notify, 0:don't notify
-         }
           buf = &ptr->buf_;
           bess::Packet **p_buf = &buf->pkts()[buf->cnt()];
           bess::Packet **p_batch = &batch->pkts()[i];
