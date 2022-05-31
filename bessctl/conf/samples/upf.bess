@@ -119,10 +119,19 @@ farDlExecute.add(fields=[{'value_int':3}], gate=2)
 farExecute.add(fields=[{'value_int':1}], gate=0)
 farExecute.add(fields=[{'value_int':2}], gate=1)
 farExecute.add(fields=[{'value_int':3}], gate=1)
+#Add UDP Socket to PFCP Agent
+#buffer.add_socket(pfcpAgentAddr='140.113.194.239')
 
+# Drop Packets
+pdrDlLookup:1 -> Sink()
+pdrDlLookup.set_default_gate(gate=1)
+farDlLookup:1 -> Sink()
+
+
+
+###TESTING###
 #buffer.add(farid=2)
 #buffer.add(farid=33554432)
-
 #Defaulte Flow Rules For testing 
 #pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.1')}] \
 #                , values =[{'value_int':2}, {'value_int':2}] \
@@ -140,9 +149,3 @@ farExecute.add(fields=[{'value_int':3}], gate=1)
 #farLookup.add(fields=[{'value_int':1}], \
 #                values=[{'value_int':1}] \
 #                , gate=0)
-
-
-# Drop Packets
-pdrDlLookup:1 -> Sink()
-pdrDlLookup.set_default_gate(gate=1)
-farDlLookup:1 -> Sink()

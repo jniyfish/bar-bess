@@ -56,11 +56,15 @@ void Buffer::ProcessBatch(Context *, bess::PacketBatch *batch) {
     uint farId = get_attr<uint32_t>(this, 0, pkt);
     while(ptr!=NULL){
       if(farId == ptr->farID){
-          buf = &ptr->buf_;
-          bess::Packet **p_buf = &buf->pkts()[buf->cnt()];
-          bess::Packet **p_batch = &batch->pkts()[i];
-          buf->incr_cnt(1);
-          bess::utils::CopyInlined(p_buf, p_batch, 1 * sizeof(bess::Packet *));
+        if(ptr->notifyCpFlag == 1) {
+          SendPfcpReport();
+          ptr->notifyCpFlag = 0;
+        }
+        buf = &ptr->buf_;
+        bess::Packet **p_buf = &buf->pkts()[buf->cnt()];
+        bess::Packet **p_batch = &batch->pkts()[i];
+        buf->incr_cnt(1);
+        bess::utils::CopyInlined(p_buf, p_batch, 1 * sizeof(bess::Packet *));
       }
       ptr = ptr->next;
     }
@@ -71,7 +75,6 @@ struct task_result Buffer::RunTask(Context *ctx, bess::PacketBatch *batch, void 
   struct list *ptr = this->head;
   while(ptr!=NULL){
     if (ptr->releaseFlag == 1) {
-      ptr->releaseFlag = 0;
       buf = &ptr->buf_;
       buf->set_cnt( buf->cnt() + batch->cnt());
       bess::PacketBatch *new_batch = ctx->task->AllocPacketBatch();
@@ -93,6 +96,7 @@ CommandResponse Buffer::CommandRelease(const bess::pb::BufferCommandReleaseArg &
   while(ptr!=NULL){
     if(ptr->farID  == arg.farid()){
       ptr->releaseFlag = 1;
+      break;
     }
     ptr=ptr->next;
   }
@@ -112,6 +116,8 @@ CommandResponse Buffer::CommandAddPDUSession(const bess::pb::BufferCommandAddPDU
   struct list *ptr = head;
   while(ptr!=NULL){
     if (ptr->farID == arg.farid()) {
+      head->releaseFlag = 0;
+      head->notifyCpFlag = 1;
       return CommandSuccess();
     }
     else if (ptr->farID != arg.farid()){
@@ -166,7 +172,9 @@ int Buffer::SendPfcpReport() {
 
 CommandResponse Buffer::Init(const bess::pb::EmptyArg &) {
   using AccessMode = bess::metadata::Attribute::AccessMode;
-
+  this->serAdd.sin_family=AF_INET;
+  this->serAdd.sin_port=htons(this->portNum);
+  inet_pton(AF_INET, "140.113.194.239", &serAdd.sin_addr);
   AddMetadataAttr("farid", 4, AccessMode::kRead);
   //AddMetadataAttr("ip_dst", 4, AccessMode::kRead);
 
