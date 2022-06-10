@@ -2,11 +2,9 @@ import socket
 
 
 ##### Add Virtual Port ######
-#Add Access Port
+#Add Access and Core Port
 #access_if = VPort(ifname='eth_access', ip_addrs=['10.100.100.10/24'])
-#Add Core Port
 #core_if = VPort(ifname='eth_core', ip_addrs=['10.0.100.1/24'])
-##### Add Virtual Port ######
 
 ##### Add Phy Port #####
 access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
@@ -14,9 +12,8 @@ core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
 bess.add_worker(wid=0, core=16)
 bess.add_worker(wid=1, core=17)
 bess.add_worker(wid=2, core=18)
-##### Add Phy Port #####
 
-#PortInc(port=host_if) -> PortOut(port=container_if)
+chokepoint = Bypass()
 
 def aton(ip):
     return socket.inet_aton(ip)
@@ -29,6 +26,12 @@ BPF_drop = 1
 pdr_forward = 0
 pdr_buffer = 1
 pdr_drop = 2
+qerGreenGate = 1
+qerYellowGate = 2
+qerRedGate = 3
+qerFailGate = 4
+qerStatusDropGate = 5
+qerUnmeteredGate = 6
 
 ###########################################
 #              Add worker                 #
@@ -38,7 +41,7 @@ pdr_drop = 2
 ###########################################
 #              UL Pipe Line               #
 ###########################################
-PortInc(port=access_if)\
+ulPort::PortInc(port=access_if)\
     -> ulBPF::BPF():BPF_forward \
     -> ulPktParse::GtpuParser():1 \
     -> pdrLookup::ExactMatch(fields=[{'attr_name':'teid', 'num_bytes':4}, \
@@ -53,7 +56,7 @@ PortInc(port=access_if)\
     -> gtpuDecap::GtpuDecap() \
     ->  setEthernet::SetMetadata(attrs=[
         {'name': 'ether_src', 'size': 6, 'value_int': 0x04d9f57d9c5e}, \
-        {'name': 'ether_dst', 'size': 6, 'value_int': 0x3cfdfebafad3}, \
+        {'name': 'ether_dst', 'size': 6, 'value_int': 0x3cfdfebafad1}, \
         {'name': 'ether_type', 'size': 2, 'value_int': 0x0800}]) \
         -> EtherEncap() \
     -> PortOut(port=core_if)
@@ -80,12 +83,13 @@ ulBPF.add(filters=[uplink_filter])
 ###########################################
 
 
-PortInc(port=core_if) \
+dlPort::PortInc(port=core_if) \
     -> dlPktParse::GtpuParser():1 \
     -> pdrDlLookup::ExactMatch(fields=[{'attr_name':'dst_ip', 'num_bytes':4}], \
                                 values=[{'attr_name':'pdr_id', 'num_bytes':4}, \
                                         {'attr_name':'far_id', 'num_bytes':4}, \
-                                        {'attr_name':'farid', 'num_bytes':4}
+                                        {'attr_name':'farid', 'num_bytes':4}, \
+                                        {'attr_name':'qerid', 'num_bytes':4} \
                                         ]\
                                         ):pdr_forward \
     -> farDlLookup::ExactMatch(fields=[{'attr_name':'far_id', 'num_bytes':4}], \
@@ -96,7 +100,22 @@ PortInc(port=core_if) \
                                      {'attr_name':'tunnel_out_udp_port', 'num_bytes':2}],\
                                     ):pdr_forward \
     -> farDlExecute::ExactMatch(fields=[{'attr_name':'action', 'num_bytes':1}]):pdr_forward \
-    -> dlFarMerge::Merge() \
+    -> dlFarMerge::Bypass() \
+    -> qerDlLookup::Qos(fields=[{'attr_name':'qerid', 'num_bytes':4}], \
+        )
+
+qerDlLookup:qerGreenGate -> green::Queue()
+qerDlLookup:qerYellowGate -> yellow::Queue()
+qerDlLookup:qerRedGate -> sessionQERMeterRed::Sink()
+qerDlLookup:qerStatusDropGate -> sessionQERStatusDrop::Sink()
+qerDlLookup:qerUnmeteredGate -> nocolor::Queue()
+qerDlLookup.set_default_gate(gate=qerUnmeteredGate)
+
+green -> qMerge::Bypass()
+yellow -> qMerge
+nocolor -> qMerge
+
+qMerge \
     -> gtpuEncap::GtpuEncap():1 \
     ->  setEthernet2::SetMetadata(attrs=[
         {'name': 'ether_src', 'size': 6, 'value_int': 0x04d9f57d9c5f}, \
@@ -109,7 +128,17 @@ PortInc(port=core_if) \
 
 farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
 farDlExecute:2 -> Sink()
-buffer.attach_task(wid=2)
+ulPort.attach_task(wid=0)
+dlPort.attach_task(wid=1)
+buffer.attach_task(wid=1)
+
+bess.add_tc('main',
+            policy='priority',
+            wid=2)
+
+green.attach_task(parent='main', priority = 10, share= None)
+yellow.attach_task(parent='main', priority = 11, share= None)
+nocolor.attach_task(parent='main', priority = 12, share= None)
 #Defaulte farExecute Action Rules
 # 1: forward
 # 2: buffer
@@ -121,7 +150,7 @@ farExecute.add(fields=[{'value_int':1}], gate=0)
 farExecute.add(fields=[{'value_int':2}], gate=1)
 farExecute.add(fields=[{'value_int':3}], gate=1)
 #Add UDP Socket to PFCP Agent
-buffer.add_socket(pfcpAgentAddr='140.113.194.239')
+#buffer.add_socket(pfcpAgentAddr='140.113.194.239')
 
 # Drop Packets
 pdrDlLookup:1 -> Sink()
@@ -132,21 +161,22 @@ farDlLookup:1 -> Sink()
 
 ###TESTING###
 #buffer.add(farid=2)
-#buffer.add(farid=33554432)
+buffer.add(farid=33554432)
 #Defaulte Flow Rules For testing 
-#pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.1')}] \
-#                , values =[{'value_int':2}, {'value_int':2}] \
-#                , gate=0)
-#farDlLookup.add(fields=[{'value_bin':"\000\000\000\002"}], \
-#                values=[{'value_int':1}, \
-#                {'value_bin': aton('10.100.100.10')}, \
-#                {'value_bin': aton('1.100.100.10')}, \
-#                {'value_bin': aton('1.0.0.0')}, \
-#                {'value_bin': '\x68\x08'}] \
-#                , gate=0)
-#pdrLookup.add(fields= [{'value_bin':aton('0.0.0.1')}, {'value_bin':aton('60.60.0.1')}] \
-#                , values =[{'value_int':1}, {'value_int':1}] \
-#                , gate=0)
-#farLookup.add(fields=[{'value_int':1}], \
-#                values=[{'value_int':1}] \
-#                , gate=0)
+pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.1')}] \
+                , values =[{'value_int':2}, {'value_int':2}, {'value_int':2}, {'value_int':2}] \
+                , gate=0)
+farDlLookup.add(fields=[{'value_bin':"\002\000\000\000"}], \
+                values=[{'value_int':1}, \
+                {'value_bin': aton('10.100.100.10')}, \
+                {'value_bin': aton('1.100.100.10')}, \
+                {'value_bin': aton('1.0.0.0')}, \
+                {'value_bin': '\x68\x08'}] \
+                , gate=0)
+pdrLookup.add(fields= [{'value_bin':aton('0.0.0.1')}, {'value_bin':aton('60.60.0.1')}] \
+                , values =[{'value_int':1}, {'value_int':1}] \
+                , gate=0)
+farLookup.add(fields=[{'value_int':1}], \
+                values=[{'value_int':1}] \
+                , gate=0)
+qerDlLookup.add(gate=0, cbs=500000, pbs=500000, ebs=500000, cir=500000000, pir=1000000000, fields= [{'value_int':2}])

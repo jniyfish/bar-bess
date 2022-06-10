@@ -48,7 +48,12 @@ using namespace std;
 /* TODO: timer-triggered flush */
 class Buffer final : public Module {
  public:
-  Buffer() : Module(), buf_() {}
+  
+  Buffer() : Module(), buf_() {
+    is_task_ = true;
+    propagate_workers_ = false;
+    max_allowed_workers_ = Worker::kMaxWorkers;
+  }
   void DeInit() override;
 
   void ProcessBatch(Context *ctx, bess::PacketBatch *batch) override;

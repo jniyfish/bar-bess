@@ -1,6 +1,19 @@
 import socket
 
-
+# miot function
+def miot_session(num):
+    for i in range(2,num):
+        s1 = '60.60.'
+        ip3 = i/255
+        ip4 = i%255
+        s3 = str(ip3)
+        s4 = str(ip4)
+        ip = s1 + s3 + '.' + s4
+        #print(ip)
+        pdrDlLookup.add(fields= [{'value_bin':aton(ip)}], values =[{'value_int':i}, {'value_int':i}, {'value_int':i}], gate=0)
+        farDlLookup.add(fields=[{'value_int':i}], values=[{'value_int':1}, {'value_bin': aton('10.100.100.10')}, {'value_bin': aton('1.100.100.10')}, {'value_bin': aton('1.0.0.0')}, {'value_bin': '\x68\x08'}] , gate=0)
+        pdrLookup.add(fields= [{'value_bin':aton('0.0.0.1')}, {'value_bin':aton(ip)}], values =[{'value_int':i}, {'value_int':i}], gate=0)
+        farLookup.add(fields=[{'value_int':i}], values=[{'value_int':1}], gate=0)
 ##### Add Virtual Port ######
 #Add Access Port
 #access_if = VPort(ifname='eth_access', ip_addrs=['10.100.100.10/24'])
@@ -13,7 +26,6 @@ access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
 core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
 bess.add_worker(wid=0, core=16)
 bess.add_worker(wid=1, core=17)
-bess.add_worker(wid=2, core=18)
 ##### Add Phy Port #####
 
 #PortInc(port=host_if) -> PortOut(port=container_if)
@@ -109,7 +121,7 @@ PortInc(port=core_if) \
 
 farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
 farDlExecute:2 -> Sink()
-buffer.attach_task(wid=2)
+buffer.attach_task(wid=1)
 #Defaulte farExecute Action Rules
 # 1: forward
 # 2: buffer
@@ -128,7 +140,7 @@ pdrDlLookup:1 -> Sink()
 pdrDlLookup.set_default_gate(gate=1)
 farDlLookup:1 -> Sink()
 
-
+miot_session(40001)
 
 ###TESTING###
 #buffer.add(farid=2)

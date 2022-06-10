@@ -30,6 +30,8 @@
 
 bess.add_worker(0, 0)
 bess.add_worker(1, 1)
+bess.add_worker(2, 2)
+bess.add_worker(3, 3)
 
 chokepoint = Bypass()
 src0::Source() -> chokepoint
@@ -38,10 +40,12 @@ src2::Source() -> chokepoint
 src3::Source() -> chokepoint
 
 chokepoint -> ws::WorkerSplit()
-ws:0 -> sink0::Sink()
-ws:1 -> sink1::Sink()
+ws:0 -> queue1::Queue() -> sink0::Sink()
+ws:1 -> queue2::Queue() -> sink1::Sink()
 
 src0.attach_task(wid=0)
 src1.attach_task(wid=0)
 src2.attach_task(wid=1)
 src3.attach_task(wid=1)
+queue1.attach_task(wid=2)
+queue2.attach_task(wid=3)

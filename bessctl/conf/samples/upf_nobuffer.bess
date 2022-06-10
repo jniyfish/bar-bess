@@ -13,7 +13,7 @@ access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
 core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
 bess.add_worker(wid=0, core=16)
 bess.add_worker(wid=1, core=17)
-bess.add_worker(wid=2, core=18)
+
 ##### Add Phy Port #####
 
 #PortInc(port=host_if) -> PortOut(port=container_if)
@@ -107,9 +107,8 @@ PortInc(port=core_if) \
     -> outerIPCsum::IPChecksum() \
     -> PortOut(port=access_if)
 
-farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
+farDlExecute:1 -> dlFarMerge
 farDlExecute:2 -> Sink()
-buffer.attach_task(wid=2)
 #Defaulte farExecute Action Rules
 # 1: forward
 # 2: buffer
@@ -121,7 +120,7 @@ farExecute.add(fields=[{'value_int':1}], gate=0)
 farExecute.add(fields=[{'value_int':2}], gate=1)
 farExecute.add(fields=[{'value_int':3}], gate=1)
 #Add UDP Socket to PFCP Agent
-buffer.add_socket(pfcpAgentAddr='140.113.194.239')
+
 
 # Drop Packets
 pdrDlLookup:1 -> Sink()
