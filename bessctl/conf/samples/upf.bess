@@ -38,7 +38,7 @@ pdr_drop = 2
 ###########################################
 #              UL Pipe Line               #
 ###########################################
-PortInc(port=access_if)\
+p1::PortInc(port=access_if)\
     -> ulBPF::BPF():BPF_forward \
     -> ulPktParse::GtpuParser():1 \
     -> pdrLookup::ExactMatch(fields=[{'attr_name':'teid', 'num_bytes':4}, \
@@ -80,7 +80,8 @@ ulBPF.add(filters=[uplink_filter])
 ###########################################
 
 
-PortInc(port=core_if) \
+p2::PortInc(port=core_if) \
+    -> measure::Measure() \
     -> dlPktParse::GtpuParser():1 \
     -> pdrDlLookup::ExactMatch(fields=[{'attr_name':'dst_ip', 'num_bytes':4}], \
                                 values=[{'attr_name':'pdr_id', 'num_bytes':4}, \
@@ -109,6 +110,8 @@ PortInc(port=core_if) \
 
 farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
 farDlExecute:2 -> Sink()
+p1.attach_task(wid=0)
+p2.attach_task(wid=1)
 buffer.attach_task(wid=2)
 #Defaulte farExecute Action Rules
 # 1: forward
