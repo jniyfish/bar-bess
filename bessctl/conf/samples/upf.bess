@@ -81,14 +81,15 @@ ulBPF.add(filters=[uplink_filter])
 
 
 p2::PortInc(port=core_if) \
-    -> measure::Measure() \
     -> dlPktParse::GtpuParser():1 \
     -> pdrDlLookup::ExactMatch(fields=[{'attr_name':'dst_ip', 'num_bytes':4}], \
                                 values=[{'attr_name':'pdr_id', 'num_bytes':4}, \
                                         {'attr_name':'far_id', 'num_bytes':4}, \
-                                        {'attr_name':'farid', 'num_bytes':4}
+                                        {'attr_name':'fseid', 'num_bytes':8}
                                         ]\
                                         ):pdr_forward \
+    -> measure::Measure() \
+    -> flow_measure::FlowMeasure(leader=True, flag_attr_name="buffer_flag", entries=200) \
     -> farDlLookup::ExactMatch(fields=[{'attr_name':'far_id', 'num_bytes':4}], \
                              values=[{'attr_name':'action', 'num_bytes':1}, \
                                      {'attr_name':'tunnel_out_src_ip4addr', 'num_bytes':4}, \

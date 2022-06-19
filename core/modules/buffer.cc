@@ -175,7 +175,7 @@ CommandResponse Buffer::Init(const bess::pb::EmptyArg &) {
   this->serAdd.sin_family=AF_INET;
   this->serAdd.sin_port=htons(this->portNum);
   inet_pton(AF_INET, "140.113.194.239", &serAdd.sin_addr);
-  AddMetadataAttr("farid", 4, AccessMode::kRead);
+  AddMetadataAttr("far_id", 4, AccessMode::kRead);
   //AddMetadataAttr("ip_dst", 4, AccessMode::kRead);
 
   task_id_t tid;
