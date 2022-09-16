@@ -1,19 +1,6 @@
 import socket
 
-# miot function
-def miot_session(num):
-    for i in range(2,num):
-        s1 = '60.60.'
-        ip3 = i/255
-        ip4 = i%255
-        s3 = str(ip3)
-        s4 = str(ip4)
-        ip = s1 + s3 + '.' + s4
-        #print(ip)
-        pdrDlLookup.add(fields= [{'value_bin':aton(ip)}], values =[{'value_int':i}, {'value_int':i}, {'value_int':i}], gate=0)
-        farDlLookup.add(fields=[{'value_int':i}], values=[{'value_int':1}, {'value_bin': aton('10.100.100.10')}, {'value_bin': aton('1.100.100.10')}, {'value_bin': aton('1.0.0.0')}, {'value_bin': '\x68\x08'}] , gate=0)
-        pdrLookup.add(fields= [{'value_bin':aton('0.0.0.1')}, {'value_bin':aton(ip)}], values =[{'value_int':i}, {'value_int':i}], gate=0)
-        farLookup.add(fields=[{'value_int':i}], values=[{'value_int':1}], gate=0)
+
 ##### Add Virtual Port ######
 #Add Access Port
 #access_if = VPort(ifname='eth_access', ip_addrs=['10.100.100.10/24'])
@@ -24,8 +11,6 @@ def miot_session(num):
 ##### Add Phy Port #####
 access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
 core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
-bess.add_worker(wid=0, core=16)
-bess.add_worker(wid=1, core=17)
 ##### Add Phy Port #####
 
 #PortInc(port=host_if) -> PortOut(port=container_if)
@@ -41,16 +26,19 @@ BPF_drop = 1
 pdr_forward = 0
 pdr_buffer = 1
 pdr_drop = 2
+Access = 1
+Core = 2
 
 ###########################################
 #              Add worker                 #
 ###########################################
-
-
+bess.add_worker(wid=0, core=16)
+#bess.add_worker(wid=1, core=17)
+#bess.add_worker(wid=2, core=18)
 ###########################################
 #              UL Pipe Line               #
 ###########################################
-PortInc(port=access_if)\
+srcLookup::ExactMatch(fields=[{'attr_name':'src_iface', 'num_bytes':1}]):0 \
     -> ulBPF::BPF():BPF_forward \
     -> ulPktParse::GtpuParser():1 \
     -> pdrLookup::ExactMatch(fields=[{'attr_name':'teid', 'num_bytes':4}, \
@@ -92,14 +80,16 @@ ulBPF.add(filters=[uplink_filter])
 ###########################################
 
 
-PortInc(port=core_if) \
+srcLookup:1  \
     -> dlPktParse::GtpuParser():1 \
     -> pdrDlLookup::ExactMatch(fields=[{'attr_name':'dst_ip', 'num_bytes':4}], \
                                 values=[{'attr_name':'pdr_id', 'num_bytes':4}, \
                                         {'attr_name':'far_id', 'num_bytes':4}, \
-                                        {'attr_name':'seid', 'num_bytes':8}
+                                        {'attr_name':'fseid', 'num_bytes':8}
                                         ]\
                                         ):pdr_forward \
+    -> measure::Measure() \
+    -> flow_measure::FlowMeasure(leader=True, flag_attr_name="buffer_flag", entries=200) \
     -> farDlLookup::ExactMatch(fields=[{'attr_name':'far_id', 'num_bytes':4}], \
                              values=[{'attr_name':'action', 'num_bytes':1}, \
                                      {'attr_name':'tunnel_out_src_ip4addr', 'num_bytes':4}, \
@@ -121,7 +111,20 @@ PortInc(port=core_if) \
 
 farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
 farDlExecute:2 -> Sink()
-buffer.attach_task(wid=1)
+###########################################
+#            Share Pipe Line              #
+###########################################
+p1::PortInc(port=access_if)\
+    -> src1::SetMetadata(attrs=[{'name':'src_iface', 'size':1, 'value_int':1}]) \
+    -> srcMerge::Merge() \
+    -> srcLookup
+p2::PortInc(port=core_if) \
+    -> src2::SetMetadata(attrs=[{'name':'src_iface', 'size':1, 'value_int':2}]) \
+    -> srcMerge \
+    -> srcLookup
+p1.attach_task(wid=0)
+p2.attach_task(wid=1)
+buffer.attach_task(wid=2)
 #Defaulte farExecute Action Rules
 # 1: forward
 # 2: buffer
@@ -140,7 +143,7 @@ pdrDlLookup:1 -> Sink()
 pdrDlLookup.set_default_gate(gate=1)
 farDlLookup:1 -> Sink()
 
-miot_session(40001)
+
 
 ###TESTING###
 #buffer.add(farid=2)

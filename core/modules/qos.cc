@@ -370,7 +370,7 @@ CommandResponse Qos::CommandAdd(const bess::pb::QosCommandAddArg &arg) {
     } else {
       v.deduct_len = arg.deduct_len();
     }
-
+    
     DLOG(INFO) << "Adding entry"
                << " cir: " << cir << " pir: " << pir << " cbs: " << cbs
                << " pbs: " << pbs << " ebs: " << ebs << std::endl;

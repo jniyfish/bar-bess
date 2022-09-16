@@ -8,12 +8,11 @@ import socket
 
 ##### Add Phy Port #####
 access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
+core_if2::PMDPort(pci='0000:83:00.2', num_inc_q=1, num_out_q=1)
 core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
 bess.add_worker(wid=0, core=16)
 bess.add_worker(wid=1, core=17)
 bess.add_worker(wid=2, core=18)
-
-chokepoint = Bypass()
 
 def aton(ip):
     return socket.inet_aton(ip)
@@ -82,8 +81,9 @@ ulBPF.add(filters=[uplink_filter])
 #              DL Pipe Line               #
 ###########################################
 
-
+dlPort0::PortInc(port=core_if2) -> dMerger::Merge()
 dlPort::PortInc(port=core_if) \
+    -> dMerger \
     -> dlPktParse::GtpuParser():1 \
     -> pdrDlLookup::ExactMatch(fields=[{'attr_name':'dst_ip', 'num_bytes':4}], \
                                 values=[{'attr_name':'pdr_id', 'num_bytes':4}, \
@@ -101,44 +101,46 @@ dlPort::PortInc(port=core_if) \
                                     ):pdr_forward \
     -> farDlExecute::ExactMatch(fields=[{'attr_name':'action', 'num_bytes':1}]):pdr_forward \
     -> dlFarMerge::Bypass() \
-    -> qerDlLookup::Qos(fields=[{'attr_name':'qerid', 'num_bytes':4}], \
-        )
-
-qerDlLookup:qerGreenGate -> green::Queue()
-qerDlLookup:qerYellowGate -> yellow::Queue()
-qerDlLookup:qerRedGate -> sessionQERMeterRed::Sink()
-qerDlLookup:qerStatusDropGate -> sessionQERStatusDrop::Sink()
-qerDlLookup:qerUnmeteredGate -> nocolor::Queue()
-qerDlLookup.set_default_gate(gate=qerUnmeteredGate)
-
-green -> qMerge::Bypass()
-yellow -> qMerge
-nocolor -> qMerge
-
-qMerge \
     -> gtpuEncap::GtpuEncap():1 \
     ->  setEthernet2::SetMetadata(attrs=[
         {'name': 'ether_src', 'size': 6, 'value_int': 0x04d9f57d9c5f}, \
         {'name': 'ether_dst', 'size': 6, 'value_int': 0x4e10b03a6f85}, \
         {'name': 'ether_type', 'size': 2, 'value_int': 0x0800}]) \
     -> EtherEncap() \
+    -> qerDlLookup::Qos(fields=[{'attr_name':'qerid', 'num_bytes':4}], \
+        )
+
+qerDlLookup:qerGreenGate -> gMerge::Merge()
+qerDlLookup:qerYellowGate -> yMerge::Merge()
+qerDlLookup:qerRedGate -> sessionQERMeterRed::Sink()
+qerDlLookup:qerStatusDropGate -> sessionQERStatusDrop::Sink()
+qerDlLookup:qerUnmeteredGate -> yMerge
+qerDlLookup.set_default_gate(gate=qerUnmeteredGate)
+
+yMerge -> limit::Queue()
+#    -> SetMetadata(attrs=[{'name': 'qerid', 'size': 4, 'value_int': 0}]) \
+#    -> limit::Qos(fields=[{'attr_name':'qerid', 'num_bytes':4}],)
+
+
+#limit:qerGreenGate  -> gMerge
+#limit:qerYellowGate  -> gMerge
+#limit:qerUnmeteredGate  -> gMerge
+#limit:qerRedGate -> s1::Sink()
+#limit:qerStatusDropGate -> s2::Sink()
+limit-> gMerge
+gMerge \
     -> outerUDPCsum::L4Checksum() \
     -> outerIPCsum::IPChecksum() \
     -> PortOut(port=access_if)
 
-farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
+farDlExecute:1 -> dlFarMerge
 farDlExecute:2 -> Sink()
 ulPort.attach_task(wid=0)
 dlPort.attach_task(wid=1)
-buffer.attach_task(wid=1)
+dlPort0.attach_task(wid=2)
 
-bess.add_tc('main',
-            policy='priority',
-            wid=2)
-
-green.attach_task(parent='main', priority = 10, share= None)
-yellow.attach_task(parent='main', priority = 11, share= None)
-nocolor.attach_task(parent='main', priority = 12, share= None)
+bess.add_tc('fast', policy='rate_limit', resource='bit', limit={'bit': 8000000000})
+limit.attach_task('fast')
 #Defaulte farExecute Action Rules
 # 1: forward
 # 2: buffer
@@ -161,8 +163,9 @@ farDlLookup:1 -> Sink()
 
 ###TESTING###
 #buffer.add(farid=2)
-buffer.add(farid=33554432)
+#buffer.add(farid=33554432)
 #Defaulte Flow Rules For testing 
+#Session1
 pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.1')}] \
                 , values =[{'value_int':2}, {'value_int':2}, {'value_int':2}, {'value_int':2}] \
                 , gate=0)
@@ -179,4 +182,24 @@ pdrLookup.add(fields= [{'value_bin':aton('0.0.0.1')}, {'value_bin':aton('60.60.0
 farLookup.add(fields=[{'value_int':1}], \
                 values=[{'value_int':1}] \
                 , gate=0)
-qerDlLookup.add(gate=0, cbs=500000, pbs=500000, ebs=500000, cir=500000000, pir=1000000000, fields= [{'value_int':2}])
+#Session2
+pdrDlLookup.add(fields= [{'value_bin':aton('60.60.0.2')}] \
+                , values =[{'value_int':4}, {'value_int':4}, {'value_int':4}, {'value_int':4}] \
+                , gate=0)
+farDlLookup.add(fields=[{'value_bin':"\004\000\000\000"}], \
+                values=[{'value_int':1}, \
+                {'value_bin': aton('10.100.100.10')}, \
+                {'value_bin': aton('2.100.100.10')}, \
+                {'value_bin': aton('2.0.0.0')}, \
+                {'value_bin': '\x68\x08'}] \
+                , gate=0)
+pdrLookup.add(fields= [{'value_bin':aton('0.0.0.2')}, {'value_bin':aton('60.60.0.2')}] \
+                , values =[{'value_int':3}, {'value_int':3}] \
+                , gate=0)
+farLookup.add(fields=[{'value_int':3}], \
+                values=[{'value_int':1}] \
+                , gate=0)
+
+#QoS
+qerDlLookup.add(gate=0, cbs=1342177280, pbs=1342177280, ebs=0, cir=125000000, pir=400000000, fields= [{'value_int':2}])
+#limit.add(gate=0, cbs=671088640, pbs=671088640, ebs=0, cir=10, pir=800000000, fields= [{'value_int':0}])
