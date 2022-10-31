@@ -3,17 +3,17 @@ import socket
 
 ##### Add Virtual Port ######
 #Add Access Port
-access_if = VPort(ifname='ran_iface', ip_addrs=['10.100.100.10/24'])
+#access_if = VPort(ifname='eth_access', ip_addrs=['10.100.100.10/24'])
 #Add Core Port
-core_if = VPort(ifname='eth_core', ip_addrs=['10.0.100.1/24'])
+#core_if = VPort(ifname='eth_core', ip_addrs=['10.0.100.1/24'])
 ##### Add Virtual Port ######
 
 ##### Add Phy Port #####
-#access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
-#core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
+access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
+core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
 bess.add_worker(wid=0, core=16)
 bess.add_worker(wid=1, core=17)
-#bess.add_worker(wid=2, core=18)
+bess.add_worker(wid=2, core=18)
 ##### Add Phy Port #####
 
 #PortInc(port=host_if) -> PortOut(port=container_if)
@@ -109,23 +109,24 @@ p2::PortInc(port=core_if) \
     -> outerIPCsum::IPChecksum() \
     -> PortOut(port=access_if)
 
-farDlExecute:1 -> dlFarMerge
+farDlExecute:1 -> buffer::Buffer() -> dlFarMerge
+#farDlExecute:1 -> dlFarMerge
 farDlExecute:2 -> Sink()
 p1.attach_task(wid=0)
 p2.attach_task(wid=1)
-#buffer.attach_task(wid=2)
+buffer.attach_task(wid=2)
 #Defaulte farExecute Action Rules
 # 1: forward
 # 2: buffer
 # 3: drop 
-farDlExecute.add(fields=[{'value_int':1}], gate=0)
+farDlExecute.add(fields=[{'value_int':1}], gate=1)
 farDlExecute.add(fields=[{'value_int':2}], gate=1)
 farDlExecute.add(fields=[{'value_int':3}], gate=2)
 farExecute.add(fields=[{'value_int':1}], gate=0)
 farExecute.add(fields=[{'value_int':2}], gate=1)
 farExecute.add(fields=[{'value_int':3}], gate=1)
 #Add UDP Socket to PFCP Agent
-#buffer.add_socket(pfcpAgentAddr='140.113.194.239')
+buffer.add_socket(pfcpAgentAddr='140.113.194.239')
 
 # Drop Packets
 pdrDlLookup:1 -> Sink()
@@ -154,11 +155,3 @@ farDlLookup:1 -> Sink()
 #farLookup.add(fields=[{'value_int':1}], \
 #                values=[{'value_int':1}] \
 #                , gate=0)
-
-#ulIpRouting.add(fields=[{'value_bin':aton('10.0.100.1')}] \
-#                , values=[{'value_int': 0x9d59134d1500}, {'value_int': 0x422c94ef9408},{'value_int': 0x0008}] \
-#                , gate=0)
-#dlIpRouting.add(fields=[{'value_bin':aton('1.100.100.10')}] \
-#                , values=[{'value_int': 0x9d59134d1500}, {'value_int': 0xecda4d97c4d8},{'value_int': 0x0008}] \
-#                , gate=0)
-#flowgrind -H s=10.100.0.1,d=60.60.0.1 -A s -i
