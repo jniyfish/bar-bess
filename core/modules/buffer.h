@@ -35,6 +35,7 @@
 #include "../pb/module_msg.pb.h"
 #include "../kmod/llring.h"
 
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -50,7 +51,8 @@ using namespace std;
 class Buffer final : public Module {
  public:
   
-  Buffer() : Module(), buf_(), queue_(), burst_(), size_(), stats_() {
+  Buffer() : Module(), buf_(), queue_(), burst_(), size_(), high_water_(),
+        low_water_(), prefetch_() {
     is_task_ = true;
     propagate_workers_ = false;
     max_allowed_workers_ = Worker::kMaxWorkers;
@@ -71,6 +73,8 @@ class Buffer final : public Module {
   
 
  private:
+
+  // Packets Buffer Vars 
   bess::PacketBatch buf_; //private buffer batch
   int release_flag = 0; //0: buffer incoming packet 1: release buffered packet
   struct list{
@@ -83,6 +87,7 @@ class Buffer final : public Module {
   };
   struct list *head = NULL;
 
+  //Session Report Vars
   sockaddr_in serAdd;
   char *pfcpAgentAddr;
   int client = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -90,24 +95,21 @@ class Buffer final : public Module {
   //lient = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
   //Packet Queue Related Variables
-
-  //Packets Queue
-  struct llring *queue_;
-
-  //Packets Burst size
+  const double kHighWaterRatio = 0.90;
+  const double kLowWaterRatio = 0.15;
+  int Resize(int slots);
+  // Readjusts the water level according to `size_`.
+  void AdjustWaterLevels();
+  struct llring *queue_; //ring buffer
+  // Whether backpressure should be applied or not
+  bool backpressure_;
   int burst_;
-
   // Queue capacity
   uint64_t size_;
-
-  // Accumulated statistics counters
-  struct {
-    uint64_t enqueued;
-    uint64_t dequeued;
-    uint64_t dropped;
-  } stats_;
-
-  //Resize Queue Size
-  int Resize(int slots);
+  // High water occupancy
+  uint64_t high_water_;
+  // Low water occupancy
+  uint64_t low_water_;
+  bool prefetch_;
 };
 #endif  // BESS_MODULES_BUFFER_H_

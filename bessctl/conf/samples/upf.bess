@@ -9,7 +9,7 @@ import socket
 ##### Add Virtual Port ######
 
 ##### Add Phy Port #####
-access_if::PMDPort(pci='0000:83:00.1', num_inc_q=1, num_out_q=1)
+access_if::PMDPort(pci='0000:83:00.2', num_inc_q=1, num_out_q=1)
 core_if::PMDPort(pci='0000:83:00.3', num_inc_q=1, num_out_q=1)
 bess.add_worker(wid=0, core=16)
 bess.add_worker(wid=1, core=17)
@@ -155,3 +155,11 @@ farDlLookup:1 -> Sink()
 #farLookup.add(fields=[{'value_int':1}], \
 #                values=[{'value_int':1}] \
 #                , gate=0)
+
+#ulIpRouting.add(fields=[{'value_bin':aton('10.0.100.1')}] \
+#                , values=[{'value_int': 0x9d59134d1500}, {'value_int': 0x422c94ef9408},{'value_int': 0x0008}] \
+#                , gate=0)
+#dlIpRouting.add(fields=[{'value_bin':aton('1.100.100.10')}] \
+#                , values=[{'value_int': 0x9d59134d1500}, {'value_int': 0xecda4d97c4d8},{'value_int': 0x0008}] \
+#                , gate=0)
+#flowgrind -H s=10.100.0.1,d=60.60.0.1 -A s -i

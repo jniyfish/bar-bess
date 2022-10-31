@@ -31,7 +31,7 @@
 #include "buffer.h"
 #include "../utils/format.h"
 #include <cstdlib>
-
+#include "../core/packet.h"
 
 const Commands Buffer::cmds = {
     {"release", "BufferCommandReleaseArg", MODULE_CMD_FUNC(&Buffer::CommandRelease),
@@ -51,29 +51,47 @@ void Buffer::ProcessBatch(Context *, bess::PacketBatch *batch) {
   bess::PacketBatch *buf = NULL;
   struct list *ptr = this->head;
   uint left = batch->cnt();
-  for (uint i = 0; i < left; i++) {
-    bess::Packet *pkt = batch->pkts()[i];
-    uint farId = get_attr<uint32_t>(this, 0, pkt);
-    while(ptr!=NULL){
-      if(farId == ptr->farID){
-        if(ptr->notifyCpFlag == 1) {
-          SendPfcpReport();
-          ptr->notifyCpFlag = 0;
+  if(ptr!=NULL) {  //check linked list if has buffer session 
+    for (uint i = 0; i < left; i++) {
+      bess::Packet *pkt = batch->pkts()[i];
+      uint farId = get_attr<uint32_t>(this, 0, pkt);
+      while(ptr!=NULL){ //link list traversal
+        if(farId == ptr->farID){
+          if(ptr->notifyCpFlag == 1) {
+            SendPfcpReport(); //Send PFCP Report
+            ptr->notifyCpFlag = 0;
+          }
+          buf = &ptr->buf_;
+          bess::Packet **p_buf = &buf->pkts()[buf->cnt()];
+          bess::Packet **p_batch = &batch->pkts()[i];
+          buf->incr_cnt(1);
+          bess::utils::CopyInlined(p_buf, p_batch, 1 * sizeof(bess::Packet *));
+          bess::Packet::Free(pkt); //delete buffered packets from pkt batch
         }
-        buf = &ptr->buf_;
-        bess::Packet **p_buf = &buf->pkts()[buf->cnt()];
-        bess::Packet **p_batch = &batch->pkts()[i];
-        buf->incr_cnt(1);
-        bess::utils::CopyInlined(p_buf, p_batch, 1 * sizeof(bess::Packet *));
+        ptr = ptr->next;
       }
-      ptr = ptr->next;
     }
   }
+    //pass pkt btach from upstream
+    //Enqueue forward packets (packets without buffer,nocp flag) to ring buffer
+    int queued =
+      llring_mp_enqueue_burst(queue_, (void **)batch->pkts(), batch->cnt());
+    if (backpressure_ && llring_count(queue_) > high_water_) {
+      SignalOverload();
+    }
+
+    if (queued < batch->cnt()) {
+      int to_drop = batch->cnt() - queued;
+      bess::Packet::Free(batch->pkts() + queued, to_drop);
+    }
 }
 struct task_result Buffer::RunTask(Context *ctx, bess::PacketBatch *batch, void *) {
   bess::PacketBatch *buf = NULL;
   struct list *ptr = this->head;
-  while(ptr!=NULL){
+  while(ptr!=NULL){ 
+    //Fetch packets from released packets buffer
+    //TODO: think a method to check current has released buffer or not
+    // -> A global released flag??
     if (ptr->releaseFlag == 1) {
       buf = &ptr->buf_;
       buf->set_cnt( buf->cnt() + batch->cnt());
@@ -81,12 +99,38 @@ struct task_result Buffer::RunTask(Context *ctx, bess::PacketBatch *batch, void 
       new_batch->Copy(buf);
       buf->clear();
       RunNextModule(ctx, new_batch);
+      return {
+        .block = false,
+        .packets = 0,
+        .bits = 0,
+      };
     }
     ptr = ptr->next;
   }
-      return {
+  //To downstream
+  if (children_overload_ > 0) {
+    return {
         .block = true,
         .packets = 0,
+        .bits = 0,
+    };
+  }
+  const int burst = ACCESS_ONCE(burst_);
+  //const int pkt_overhead = 24;
+
+  //Fetch (Dequeue) packets from ring buffer then processing
+  //Fetch priority: 1. release buffer, 2. ring buffer
+  //Ring Buffer Ops may cause program crash
+  //Ring Buffer too dificult QQ
+  uint32_t cnt = llring_sc_dequeue_burst(queue_, (void **)batch->pkts(), burst);
+  if (cnt == 0) {
+    return {.block = true, .packets = 0, .bits = 0};
+  }
+  batch->set_cnt(cnt);
+  RunNextModule(ctx, batch);
+      return {
+        .block = false,
+        .packets = cnt * 24,
         .bits = 0,
     };
 }
@@ -151,6 +195,44 @@ CommandResponse Buffer::CommandAddUDPSocket(const bess::pb::BufferCommandAddUdpS
   return CommandSuccess();
 }
 
+int Buffer::Resize(int slots) {
+  struct llring *old_queue = queue_;
+  struct llring *new_queue;
+
+  int bytes = llring_bytes_with_slots(slots);
+
+  new_queue =
+      reinterpret_cast<llring *>(std::aligned_alloc(alignof(llring), bytes));
+  if (!new_queue) {
+    return -ENOMEM;
+  }
+
+  int ret = llring_init(new_queue, slots, 0, 1);
+  if (ret) {
+    std::free(new_queue);
+    return -EINVAL;
+  }
+
+  /* migrate packets from the old queue */
+  if (old_queue) {
+    bess::Packet *pkt;
+
+    while (llring_sc_dequeue(old_queue, (void **)&pkt) == 0) {
+      ret = llring_sp_enqueue(new_queue, pkt);
+      if (ret == -LLRING_ERR_NOBUF) {
+        bess::Packet::Free(pkt);
+      }
+    }
+
+    std::free(old_queue);
+  }
+
+  queue_ = new_queue;
+  size_ = slots;
+
+  return 0;
+}
+
 int Buffer::SendPfcpReport() {
   int result;
   const char pfcpmsg[40]={
@@ -176,7 +258,6 @@ CommandResponse Buffer::Init(const bess::pb::EmptyArg &) {
   this->serAdd.sin_port=htons(this->portNum);
   inet_pton(AF_INET, "140.113.194.239", &serAdd.sin_addr);
   AddMetadataAttr("far_id", 4, AccessMode::kRead);
-  //AddMetadataAttr("ip_dst", 4, AccessMode::kRead);
 
   task_id_t tid;
   CommandResponse err;
@@ -186,6 +267,14 @@ CommandResponse Buffer::Init(const bess::pb::EmptyArg &) {
     return CommandFailure(ENOMEM, "Task creation failed");
   }
 
+//Queueing
+  burst_ = bess::PacketBatch::kMaxBurst;
+
+  int ret = Resize(1024); //DEFAULT_QUEUE_SIZE
+    if (ret) {
+      return CommandFailure(-ret);
+    }
+// Queueing
   return CommandSuccess();
 }
 
