@@ -47,11 +47,10 @@ p1::PortInc(port=access_if)\
                                         {'attr_name':'far_id', 'num_bytes':4}]\
                                         ):pdr_forward \
     -> farLookup::ExactMatch(fields=[{'attr_name':'far_id', 'num_bytes':4}], \
-                             values=[{'attr_name':'action', 'num_bytes':1}], \
+                             values=[{'attr_name':'n6_gateway', 'num_bytes':1}], \
                                         ):pdr_forward \
-    -> farExecute::ExactMatch(fields=[{'attr_name':'action', 'num_bytes':1}]):pdr_forward \
     -> gtpuDecap::GtpuDecap() \
-    -> ulIpRouting::ExactMatch(fields=[{'attr_name':'dst_ip', 'num_bytes':4}], \
+    -> ulIpRouting::ExactMatch(fields=[{'attr_name':'n6_gateway', 'num_bytes':1}], \
                                 values=[{'attr_name':'ether_src', 'num_bytes':6}, \
                                         {'attr_name':'ether_dst', 'num_bytes':6},
                                         {'attr_name':'ether_type', 'num_bytes':2}]\
@@ -122,9 +121,9 @@ buffer.attach_task(wid=2)
 farDlExecute.add(fields=[{'value_int':1}], gate=1)
 farDlExecute.add(fields=[{'value_int':2}], gate=1)
 farDlExecute.add(fields=[{'value_int':3}], gate=2)
-farExecute.add(fields=[{'value_int':1}], gate=0)
-farExecute.add(fields=[{'value_int':2}], gate=1)
-farExecute.add(fields=[{'value_int':3}], gate=1)
+#farExecute.add(fields=[{'value_int':1}], gate=0)
+#farExecute.add(fields=[{'value_int':2}], gate=1)
+#farExecute.add(fields=[{'value_int':3}], gate=1)
 #Add UDP Socket to PFCP Agent
 buffer.add_socket(pfcpAgentAddr='140.113.194.239')
 
